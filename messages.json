@@ -1,0 +1,38 @@
+{
+  "welcome_messages": {
+    "initial_welcome": {
+      "title": "🎉 도라도라미와 속닥속닥",
+      "description": "관리자와 개인 대화가 가능합니다!\n48시간 내로 적응 상태 확인 메세지를 드릴 예정입니다.",
+      "field_name": "📋 서버 규칙을 확인하시고 편안하게 이용해주세요!",
+      "field_value": "심심해서 들어온거면 관리진들이 불러줄때 빨리 답장하고 부르면 음챗방 오셈\n답도 안하고 활동 안할거면 **걍 딴 서버 가라**\n그런 새끼 받아주는 서버 아님.",
+      "color": "0x00ff00"
+    },
+    "adaptation_check": {
+      "title": "🌟 서버 적응 안내",
+      "description": "{member_mention}님, 서버에 잘 적응하고 계신가요?",
+      "field_name": "📋 적응 확인",
+      "field_value": "서버에 잘 적응하고 계신가요?\n궁금한 것들이 있으시면 언제든 물어보세요!\n\n적응을 완료하셨다면 아래 버튼을 눌러주세요.\n\n🟢 6일 내에 응답이 없으면 자동으로 강퇴됩니다.",
+      "color": "0x00ff00"
+    },
+    "re_join": {
+      "message": "🔄 {member_mention}님이 다시 서버에 입장하셨습니다!"
+    }
+  },
+  "button_labels": {
+    "delete": "삭제",
+    "admin_review": "관리자 검토"
+  },
+  "responses": {
+    "delete_confirm": "❌ 채널이 삭제됩니다.",
+    "delete_permission_error": "❌ 본인만 삭제할 수 있습니다.",
+    "admin_review_confirm": "✅ {doradori_mention} 관리자 검토를 요청했습니다!",
+    "admin_review_confirm_no_role": "✅ 관리자 검토를 요청했습니다!",
+    "admin_review_permission_error": "❌ 본인만 관리자 검토를 요청할 수 있습니다."
+  },
+  "settings": {
+    "doradori_role_name": "도라도라미",
+    "welcome_category": "신입환영",
+    "adaptation_check_hours": 48,
+    "timeout_days": 6
+  }
+}
