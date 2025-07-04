@@ -20,7 +20,7 @@
   },
   "button_labels": {
     "delete": "삭제",
-    "admin_review": "관리자 호출"
+    "admin_review": "유지"
   },
   "responses": {
     "delete_confirm": "❌ 채널이 삭제됩니다.",
