@@ -34,5 +34,8 @@
     "welcome_category": "신입환영",
     "adaptation_check_seconds": 5,
     "timeout_days": 6
+  },
+  "leave_messages": {
+    "channel_deleted": "🚪 {member_name}님이 서버를 나가서 환영 채널이 삭제되었습니다."
   }
 }
