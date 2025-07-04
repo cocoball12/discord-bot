@@ -27,13 +27,21 @@
     "delete_permission_error": "❌ 본인만 삭제할 수 있습니다.",
     "admin_review_confirm": "✅ {doradori_mention} 관리자를 호출했습니다!",
     "admin_review_confirm_no_role": "✅ 관리자를 호출했습니다!",
-    "admin_review_permission_error": "❌ 본인만 관리자를 호출할 수 있습니다."
+    "admin_review_permission_error": "❌ 본인만 관리자를 호출할 수 있습니다.",
+    "nickname_changed_male": "✅ 닉네임이 '(단팥빵) {name}'으로 변경되었습니다!",
+    "nickname_changed_female": "✅ 닉네임이 '(메론빵) {name}'으로 변경되었습니다!",
+    "nickname_change_failed": "❌ 닉네임 변경에 실패했습니다. 권한을 확인해주세요.",
+    "nickname_already_has_prefix": "✅ 이미 성별 표시가 되어 있습니다!"
   },
   "settings": {
     "doradori_role_name": "도라도라미",
     "welcome_category": "신입환영",
     "adaptation_check_seconds": 5,
-    "timeout_days": 6
+    "timeout_days": 6,
+    "male_role_name": "남자",
+    "female_role_name": "여자",
+    "male_prefix": "(단팥빵)",
+    "female_prefix": "(메론빵)"
   },
   "leave_messages": {
     "channel_deleted": "🚪 {member_name}님이 서버를 나가서 환영 채널이 삭제되었습니다."
