@@ -154,7 +154,7 @@ class WelcomeView(discord.ui.View):
         await asyncio.sleep(3)
         await interaction.channel.delete()
 
-    @discord.ui.button(label="유지", style=discord.ButtonStyle.success, emoji="✅")
+    @discord.ui.button(label="관리자 호출", style=discord.ButtonStyle.success, emoji="✅")
     async def admin_review_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         # 본인만 관리자를 호출할 수 있도록 확인
         if interaction.user.id != self.member_id:
@@ -244,7 +244,17 @@ async def on_member_join(member):
         inline=False
     )
     
-    await channel.send(embed=embed)
+    # 도라도라미 역할 호출 추가
+    doradori_role = discord.utils.get(member.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
+    if doradori_role:
+        embed.add_field(
+            name="",
+            value=f"{doradori_role.mention}",
+            inline=False
+        )
+    
+    view = WelcomeView(member.id)
+    await channel.send(embed=embed, view=view)
     
     # 적응 확인 메시지 (5초 후)
     await asyncio.sleep(MESSAGES["settings"]["adaptation_check_seconds"])
