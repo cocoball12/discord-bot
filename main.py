@@ -19,7 +19,7 @@ def get_default_messages():
         "welcome_messages": {
             "initial_welcome": {
                 "title": "🎉 도라도라미와 속닥속닥",
-                "description": "관리자와 개인 대화가 가능합니다!\n48시간 내로 적응 상태 확인 메세지를 드릴 예정입니다.",
+                "description": "관리자와 개인 대화가 가능합니다!\n5초 내로 적응 상태 확인 메세지를 드릴 예정입니다.",
                 "field_name": "📋 서버 규칙을 확인하시고 편안하게 이용해주세요!",
                 "field_value": "심심해서 들어온거면 관리진들이 불러줄때 빨리 답장하고 부르면 음챗방 오셈\n답도 안하고 활동 안할거면 **걍 딴 서버 가라**\n그런 새끼 받아주는 서버 아님.",
                 "color": "0x00ff00"
@@ -49,7 +49,7 @@ def get_default_messages():
         "settings": {
             "doradori_role_name": "도라도라미",
             "welcome_category": "신입환영",
-            "adaptation_check_hours": 48,
+            "adaptation_check_seconds": 5,
             "timeout_days": 6
         }
     }
@@ -77,7 +77,7 @@ processing_members = set()
 member_locks = {}  # 멤버별 개별 락
 # 최근 처리된 멤버 추적 (5분간 기록)
 recent_processed = {}
-# 48시간 후 확인 대기 중인 멤버들
+# 5초 후 확인 대기 중인 멤버들
 pending_checks = {}
 
 @bot.event
@@ -96,11 +96,11 @@ async def on_ready():
     recent_processed.clear()
     member_locks.clear()
     
-    # 48시간 후 확인 작업 시작
+    # 5초 후 확인 작업 시작
     bot.loop.create_task(check_adaptation_loop())
 
 async def check_adaptation_loop():
-    """48시간 후 적응 확인을 위한 백그라운드 작업"""
+    """5초 후 적응 확인을 위한 백그라운드 작업"""
     while True:
         try:
             current_time = datetime.now()
@@ -124,11 +124,11 @@ async def check_adaptation_loop():
         except Exception as e:
             print(f"적응 확인 루프 오류: {e}")
         
-        # 1시간마다 확인
-        await asyncio.sleep(3600)
+        # 1초마다 확인 (5초 간격이므로 더 자주 확인)
+        await asyncio.sleep(1)
 
 async def send_adaptation_check(guild, member, channel_id):
-    """48시간 후 적응 확인 메시지 전송"""
+    """5초 후 적응 확인 메시지 전송"""
     try:
         channel = bot.get_channel(channel_id)
         if not channel:
@@ -154,7 +154,7 @@ async def send_adaptation_check(guild, member, channel_id):
         view = AdaptationView(member, channel)
         await channel.send(embed=embed, view=view)
         
-        print(f"{member.display_name}님에게 48시간 후 적응 확인 메시지를 보냈습니다.")
+        print(f"{member.display_name}님에게 5초 후 적응 확인 메시지를 보냈습니다.")
         
     except Exception as e:
         print(f"적응 확인 메시지 전송 오류: {e}")
@@ -393,8 +393,8 @@ async def on_member_join(member):
             # 도라도라미 멘션 추가
             await welcome_channel.send(f"{doradori_role.mention}")
             
-            # 48시간 후 적응 확인 스케줄 등록
-            check_time = current_time + timedelta(hours=MESSAGES["settings"]["adaptation_check_hours"])
+            # 5초 후 적응 확인 스케줄 등록
+            check_time = current_time + timedelta(seconds=MESSAGES["settings"]["adaptation_check_seconds"])
             pending_checks[member_key] = {
                 'check_time': check_time,
                 'channel_id': welcome_channel.id,
@@ -403,7 +403,7 @@ async def on_member_join(member):
             }
             
             print(f"{member.display_name}님을 위한 환영 채널이 생성되었습니다: {welcome_channel.name}")
-            print(f"48시간 후 적응 확인 예정: {check_time}")
+            print(f"5초 후 적응 확인 예정: {check_time}")
             
         except Exception as e:
             print(f"채널 생성 중 오류가 발생했습니다: {e}")
