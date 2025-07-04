@@ -37,20 +37,23 @@ def get_default_messages():
         },
         "button_labels": {
             "delete": "삭제",
-            "admin_review": "유지"
+            "admin_review": "관리자 호출"
         },
         "responses": {
             "delete_confirm": "❌ 채널이 삭제됩니다.",
             "delete_permission_error": "❌ 본인만 삭제할 수 있습니다.",
-            "admin_review_confirm": "✅ {doradori_mention} 관리자 검토를 요청했습니다!",
-            "admin_review_confirm_no_role": "✅ 관리자 검토를 요청했습니다!",
-            "admin_review_permission_error": "❌ 본인만 관리자 검토를 요청할 수 있습니다."
+            "admin_review_confirm": "✅ {doradori_mention} 관리자를 호출했습니다!",
+            "admin_review_confirm_no_role": "✅ 관리자를 호출했습니다!",
+            "admin_review_permission_error": "❌ 본인만 관리자를 호출할 수 있습니다."
         },
         "settings": {
             "doradori_role_name": "도라도라미",
             "welcome_category": "신입환영",
             "adaptation_check_seconds": 5,
             "timeout_days": 6
+        },
+        "leave_messages": {
+            "channel_deleted": "🚪 {member_name}님이 서버를 나가서 환영 채널이 삭제되었습니다."
         }
     }
 
@@ -451,6 +454,65 @@ async def on_member_join(member):
         finally:
             # 처리 완료 후 목록에서 제거
             processing_members.discard(member_key)
+
+@bot.event
+async def on_member_remove(member):
+    """멤버가 서버를 나갔을 때 실행되는 함수"""
+    guild = member.guild
+    
+    # 봇인 경우 무시
+    if member.bot:
+        return
+    
+    try:
+        # 해당 멤버의 환영 채널 찾기
+        member_channels = []
+        for channel in guild.channels:
+            if (isinstance(channel, discord.TextChannel) and 
+                channel.name.startswith(f"환영-{member.display_name}-")):
+                member_channels.append(channel)
+        
+        # 환영 채널이 있으면 삭제
+        if member_channels:
+            # 도라도라미 역할 찾기 (로그 전송용)
+            doradori_role = discord.utils.get(guild.roles, name=DORADORI_ROLE_NAME)
+            
+            # 채널 삭제 전에 로그 메시지 준비
+            leave_message = MESSAGES["leave_messages"]["channel_deleted"].format(member_name=member.display_name)
+            
+            # 각 채널 삭제
+            for channel in member_channels:
+                try:
+                    # 채널 삭제 전에 도라도라미들에게 알림 (가능한 경우)
+                    if doradori_role and doradori_role.members:
+                        try:
+                            await channel.send(f"{doradori_role.mention} {leave_message}")
+                            # 잠시 대기 후 삭제
+                            await asyncio.sleep(2)
+                        except:
+                            pass
+                    
+                    await channel.delete()
+                    print(f"환영 채널 삭제 완료: {channel.name} ({member.display_name}님 퇴장)")
+                    
+                except Exception as e:
+                    print(f"환영 채널 삭제 실패: {e}")
+            
+            # pending_checks에서 해당 멤버 제거
+            member_key = f"{guild.id}-{member.id}"
+            if member_key in pending_checks:
+                del pending_checks[member_key]
+            
+            # 기타 추적 목록에서도 제거
+            processing_members.discard(member_key)
+            recent_processed.pop(member_key, None)
+            
+            print(f"{member.display_name}님이 서버를 나가서 환영 채널 {len(member_channels)}개를 삭제했습니다.")
+        
+    except Exception as e:
+        print(f"멤버 퇴장 처리 중 오류: {e}")
+        import traceback
+        traceback.print_exc()
 
 async def cleanup_duplicate_channels_for_member(guild, member_name, keep_channel_id):
     """특정 멤버의 중복 채널들을 정리하는 함수"""
