@@ -154,7 +154,7 @@ async def send_adaptation_check(guild, member, channel_id):
         view = AdaptationView(member, channel)
         await channel.send(embed=embed, view=view)
         
-        print(f"{member.display_name}님에게 5초 후 적응 확인 메시지를 보냈습니다.")
+        print(f"{member.display_name}님에게 적응 확인 메시지를 보냈습니다.")
         
     except Exception as e:
         print(f"적응 확인 메시지 전송 오류: {e}")
@@ -394,7 +394,8 @@ async def on_member_join(member):
             await welcome_channel.send(f"{doradori_role.mention}")
             
             # 5초 후 적응 확인 스케줄 등록
-            check_time = current_time + timedelta(seconds=MESSAGES["settings"]["adaptation_check_seconds"])
+            check_seconds = MESSAGES["settings"].get("adaptation_check_seconds", 5)
+            check_time = current_time + timedelta(seconds=check_seconds)
             pending_checks[member_key] = {
                 'check_time': check_time,
                 'channel_id': welcome_channel.id,
@@ -403,7 +404,7 @@ async def on_member_join(member):
             }
             
             print(f"{member.display_name}님을 위한 환영 채널이 생성되었습니다: {welcome_channel.name}")
-            print(f"5초 후 적응 확인 예정: {check_time}")
+            print(f"{check_seconds}초 후 적응 확인 예정: {check_time}")
             
         except Exception as e:
             print(f"채널 생성 중 오류가 발생했습니다: {e}")
