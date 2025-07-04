@@ -129,8 +129,8 @@ bot = commands.Bot(
     intents=intents
 )
 
-# 버튼 View 클래스
-class WelcomeView(discord.ui.View):
+# 첫 번째 메시지용 버튼 View 클래스
+class InitialWelcomeView(discord.ui.View):
     def __init__(self, member_id):
         super().__init__(timeout=None)
         self.member_id = member_id
@@ -155,6 +155,72 @@ class WelcomeView(discord.ui.View):
         await interaction.channel.delete()
 
     @discord.ui.button(label="관리자 호출", style=discord.ButtonStyle.success, emoji="✅")
+    async def admin_review_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 본인만 관리자를 호출할 수 있도록 확인
+        if interaction.user.id != self.member_id:
+            await interaction.response.send_message(
+                MESSAGES["responses"]["admin_review_permission_error"], 
+                ephemeral=True
+            )
+            return
+        
+        # 닉네임 변경 시도
+        member = interaction.user
+        nickname_result = await change_nickname_with_gender_prefix(member)
+        
+        # 도라도라미 역할 찾기
+        doradori_role = discord.utils.get(interaction.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
+        
+        response_message = ""
+        
+        # 닉네임 변경 결과에 따른 메시지 생성
+        if nickname_result == "male":
+            clean_name = get_clean_name(member.display_name)
+            response_message += MESSAGES["responses"]["nickname_changed_male"].format(name=clean_name) + "\n"
+        elif nickname_result == "female":
+            clean_name = get_clean_name(member.display_name)
+            response_message += MESSAGES["responses"]["nickname_changed_female"].format(name=clean_name) + "\n"
+        elif nickname_result == "already_has_prefix":
+            response_message += MESSAGES["responses"]["nickname_already_has_prefix"] + "\n"
+        elif nickname_result in ["no_permission", "error"]:
+            response_message += MESSAGES["responses"]["nickname_change_failed"] + "\n"
+        
+        # 관리자 호출 메시지 추가
+        if doradori_role:
+            response_message += MESSAGES["responses"]["admin_review_confirm"].format(
+                doradori_mention=doradori_role.mention
+            )
+        else:
+            response_message += MESSAGES["responses"]["admin_review_confirm_no_role"]
+        
+        await interaction.response.send_message(response_message)
+
+# 두 번째 메시지용 버튼 View 클래스
+class AdaptationCheckView(discord.ui.View):
+    def __init__(self, member_id):
+        super().__init__(timeout=None)
+        self.member_id = member_id
+
+    @discord.ui.button(label="삭제", style=discord.ButtonStyle.danger, emoji="❌")
+    async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 본인만 삭제할 수 있도록 확인
+        if interaction.user.id != self.member_id:
+            await interaction.response.send_message(
+                MESSAGES["responses"]["delete_permission_error"], 
+                ephemeral=True
+            )
+            return
+        
+        # 채널 삭제
+        await interaction.response.send_message(
+            MESSAGES["responses"]["delete_confirm"], 
+            ephemeral=True
+        )
+        await interaction.followup.send("3초 후 채널이 삭제됩니다...")
+        await asyncio.sleep(3)
+        await interaction.channel.delete()
+
+    @discord.ui.button(label="유지", style=discord.ButtonStyle.success, emoji="✅")
     async def admin_review_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         # 본인만 관리자를 호출할 수 있도록 확인
         if interaction.user.id != self.member_id:
@@ -253,7 +319,7 @@ async def on_member_join(member):
             inline=False
         )
     
-    view = WelcomeView(member.id)
+    view = InitialWelcomeView(member.id)
     await channel.send(embed=embed, view=view)
     
     # 적응 확인 메시지 (5초 후)
@@ -271,7 +337,7 @@ async def on_member_join(member):
         inline=False
     )
     
-    view = WelcomeView(member.id)
+    view = AdaptationCheckView(member.id)
     await channel.send(embed=embed, view=view)
 
 @bot.event
