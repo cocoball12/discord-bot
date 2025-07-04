@@ -1,10 +1,11 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import os
 import asyncio
 from datetime import datetime, timedelta
 import json
 import re
+import aiohttp
 
 # 메시지 설정 로드
 def load_messages():
@@ -69,7 +70,6 @@ def get_default_messages():
 # 닉네임 처리 함수
 def get_clean_name(display_name):
     """닉네임에서 (단팥빵) 또는 (메론빵) 접두사를 제거한 순수한 이름을 반환"""
-    # 정규표현식으로 (단팥빵) 또는 (메론빵) 접두사 제거
     clean_name = re.sub(r'^\((?:단팥빵|메론빵)\)\s*', '', display_name)
     return clean_name.strip()
 
@@ -80,30 +80,24 @@ def has_gender_prefix(display_name):
 async def change_nickname_with_gender_prefix(member):
     """성별에 따라 닉네임 앞에 접두사를 추가"""
     try:
-        # 이미 접두사가 있는지 확인
         if has_gender_prefix(member.display_name):
             return "already_has_prefix"
         
-        # 성별 역할 확인
         male_role = discord.utils.get(member.guild.roles, name=MESSAGES["settings"]["male_role_name"])
         female_role = discord.utils.get(member.guild.roles, name=MESSAGES["settings"]["female_role_name"])
         
-        # 현재 닉네임 (서버 닉네임이 있으면 그것을, 없으면 유저명)
         current_name = get_clean_name(member.display_name)
         
         new_nickname = None
         gender_type = None
         
-        # 남자 역할이 있는 경우
         if male_role and male_role in member.roles:
             new_nickname = f"{MESSAGES['settings']['male_prefix']} {current_name}"
             gender_type = "male"
-        # 여자 역할이 있는 경우
         elif female_role and female_role in member.roles:
             new_nickname = f"{MESSAGES['settings']['female_prefix']} {current_name}"
             gender_type = "female"
         
-        # 닉네임 변경 시도
         if new_nickname:
             await member.edit(nick=new_nickname)
             return gender_type
@@ -129,6 +123,51 @@ bot = commands.Bot(
     intents=intents
 )
 
+# Keep-Alive 함수들
+@tasks.loop(minutes=15)  # 15분마다 실행
+async def keep_alive():
+    """봇을 활성 상태로 유지"""
+    try:
+        # 봇 상태 업데이트
+        await bot.change_presence(
+            activity=discord.Game(name=f"서버 관리 | {len(bot.guilds)}개 서버"),
+            status=discord.Status.online
+        )
+        print(f"Keep-Alive: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    except Exception as e:
+        print(f"Keep-Alive 오류: {e}")
+
+@tasks.loop(minutes=30)  # 30분마다 실행
+async def self_ping():
+    """자신에게 HTTP 요청을 보내어 슬립 방지"""
+    try:
+        # Koyeb 앱 URL (환경변수에서 가져오기)
+        app_url = os.getenv('KOYEB_APP_URL')
+        if app_url:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{app_url}/health") as response:
+                    print(f"Self-ping: {response.status}")
+    except Exception as e:
+        print(f"Self-ping 오류: {e}")
+
+# 간단한 웹서버 라우트 (선택사항)
+@bot.event
+async def on_ready():
+    print(f'{bot.user} 봇이 준비되었습니다!')
+    
+    # Keep-Alive 태스크 시작
+    if not keep_alive.is_running():
+        keep_alive.start()
+    
+    if not self_ping.is_running():
+        self_ping.start()
+    
+    # 초기 상태 설정
+    await bot.change_presence(
+        activity=discord.Game(name=f"서버 관리 | {len(bot.guilds)}개 서버"),
+        status=discord.Status.online
+    )
+
 # 첫 번째 메시지용 버튼 View 클래스
 class InitialWelcomeView(discord.ui.View):
     def __init__(self, member_id):
@@ -137,7 +176,6 @@ class InitialWelcomeView(discord.ui.View):
 
     @discord.ui.button(label="삭제", style=discord.ButtonStyle.danger, emoji="❌")
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 본인만 삭제할 수 있도록 확인
         if interaction.user.id != self.member_id:
             await interaction.response.send_message(
                 MESSAGES["responses"]["delete_permission_error"], 
@@ -145,7 +183,6 @@ class InitialWelcomeView(discord.ui.View):
             )
             return
         
-        # 채널 삭제
         await interaction.response.send_message(
             MESSAGES["responses"]["delete_confirm"], 
             ephemeral=True
@@ -156,7 +193,6 @@ class InitialWelcomeView(discord.ui.View):
 
     @discord.ui.button(label="관리자 호출", style=discord.ButtonStyle.success, emoji="✅")
     async def admin_review_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 본인만 관리자를 호출할 수 있도록 확인
         if interaction.user.id != self.member_id:
             await interaction.response.send_message(
                 MESSAGES["responses"]["admin_review_permission_error"], 
@@ -164,16 +200,13 @@ class InitialWelcomeView(discord.ui.View):
             )
             return
         
-        # 닉네임 변경 시도
         member = interaction.user
         nickname_result = await change_nickname_with_gender_prefix(member)
         
-        # 도라도라미 역할 찾기
         doradori_role = discord.utils.get(interaction.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
         
         response_message = ""
         
-        # 닉네임 변경 결과에 따른 메시지 생성
         if nickname_result == "male":
             clean_name = get_clean_name(member.display_name)
             response_message += MESSAGES["responses"]["nickname_changed_male"].format(name=clean_name) + "\n"
@@ -185,7 +218,6 @@ class InitialWelcomeView(discord.ui.View):
         elif nickname_result in ["no_permission", "error"]:
             response_message += MESSAGES["responses"]["nickname_change_failed"] + "\n"
         
-        # 관리자 호출 메시지 추가
         if doradori_role:
             response_message += MESSAGES["responses"]["admin_review_confirm"].format(
                 doradori_mention=doradori_role.mention
@@ -203,7 +235,6 @@ class AdaptationCheckView(discord.ui.View):
 
     @discord.ui.button(label="삭제", style=discord.ButtonStyle.danger, emoji="❌")
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 본인만 삭제할 수 있도록 확인
         if interaction.user.id != self.member_id:
             await interaction.response.send_message(
                 MESSAGES["responses"]["delete_permission_error"], 
@@ -211,7 +242,6 @@ class AdaptationCheckView(discord.ui.View):
             )
             return
         
-        # 채널 삭제
         await interaction.response.send_message(
             MESSAGES["responses"]["delete_confirm"], 
             ephemeral=True
@@ -222,7 +252,6 @@ class AdaptationCheckView(discord.ui.View):
 
     @discord.ui.button(label="유지", style=discord.ButtonStyle.success, emoji="✅")
     async def admin_review_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 본인만 관리자를 호출할 수 있도록 확인
         if interaction.user.id != self.member_id:
             await interaction.response.send_message(
                 MESSAGES["responses"]["admin_review_permission_error"], 
@@ -230,16 +259,13 @@ class AdaptationCheckView(discord.ui.View):
             )
             return
         
-        # 닉네임 변경 시도
         member = interaction.user
         nickname_result = await change_nickname_with_gender_prefix(member)
         
-        # 도라도라미 역할 찾기
         doradori_role = discord.utils.get(interaction.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
         
         response_message = ""
         
-        # 닉네임 변경 결과에 따른 메시지 생성
         if nickname_result == "male":
             clean_name = get_clean_name(member.display_name)
             response_message += MESSAGES["responses"]["nickname_changed_male"].format(name=clean_name) + "\n"
@@ -251,7 +277,6 @@ class AdaptationCheckView(discord.ui.View):
         elif nickname_result in ["no_permission", "error"]:
             response_message += MESSAGES["responses"]["nickname_change_failed"] + "\n"
         
-        # 관리자 호출 메시지 추가
         if doradori_role:
             response_message += MESSAGES["responses"]["admin_review_confirm"].format(
                 doradori_mention=doradori_role.mention
@@ -263,12 +288,7 @@ class AdaptationCheckView(discord.ui.View):
 
 # 봇 이벤트
 @bot.event
-async def on_ready():
-    print(f'{bot.user} 봇이 준비되었습니다!')
-
-@bot.event
 async def on_member_join(member):
-    # 재입장 확인
     welcome_category = discord.utils.get(member.guild.categories, name=MESSAGES["settings"]["welcome_category"])
     if welcome_category:
         existing_channel = discord.utils.get(welcome_category.channels, name=f"환영-{member.name}")
@@ -276,18 +296,15 @@ async def on_member_join(member):
             await existing_channel.send(MESSAGES["welcome_messages"]["re_join"]["message"].format(member_mention=member.mention))
             return
     
-    # 신입 환영 카테고리 찾기 또는 생성
     if not welcome_category:
         welcome_category = await member.guild.create_category(MESSAGES["settings"]["welcome_category"])
     
-    # 개인 채널 생성
     overwrites = {
         member.guild.default_role: discord.PermissionOverwrite(read_messages=False),
         member: discord.PermissionOverwrite(read_messages=True, send_messages=True),
         member.guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
     }
     
-    # 도라도라미 역할이 있으면 권한 추가
     doradori_role = discord.utils.get(member.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
     if doradori_role:
         overwrites[doradori_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
@@ -297,7 +314,6 @@ async def on_member_join(member):
         overwrites=overwrites
     )
     
-    # 초기 환영 메시지
     initial_welcome = MESSAGES["welcome_messages"]["initial_welcome"]
     embed = discord.Embed(
         title=initial_welcome["title"],
@@ -310,7 +326,6 @@ async def on_member_join(member):
         inline=False
     )
     
-    # 도라도라미 역할 호출 추가
     doradori_role = discord.utils.get(member.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
     if doradori_role:
         embed.add_field(
@@ -322,7 +337,6 @@ async def on_member_join(member):
     view = InitialWelcomeView(member.id)
     await channel.send(embed=embed, view=view)
     
-    # 적응 확인 메시지 (5초 후)
     await asyncio.sleep(MESSAGES["settings"]["adaptation_check_seconds"])
     
     adaptation_check = MESSAGES["welcome_messages"]["adaptation_check"]
@@ -342,7 +356,6 @@ async def on_member_join(member):
 
 @bot.event
 async def on_member_remove(member):
-    # 해당 멤버의 환영 채널 찾기
     welcome_category = discord.utils.get(member.guild.categories, name=MESSAGES["settings"]["welcome_category"])
     if welcome_category:
         channel = discord.utils.get(welcome_category.channels, name=f"환영-{member.name}")
@@ -351,14 +364,26 @@ async def on_member_remove(member):
             await asyncio.sleep(5)
             await channel.delete()
 
+# 상태 확인 명령어
+@bot.command(name='상태')
+async def status(ctx):
+    """봇 상태 확인"""
+    embed = discord.Embed(
+        title="🤖 봇 상태",
+        color=0x00ff00
+    )
+    embed.add_field(name="서버 수", value=f"{len(bot.guilds)}개", inline=True)
+    embed.add_field(name="지연시간", value=f"{round(bot.latency * 1000)}ms", inline=True)
+    embed.add_field(name="실행시간", value=f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", inline=True)
+    
+    await ctx.send(embed=embed)
+
 # 봇 실행
 if __name__ == "__main__":
-    # 환경변수에서 토큰 가져오기
     token = os.getenv('DISCORD_TOKEN')
     if not token:
         print("오류: DISCORD_TOKEN 환경변수가 설정되지 않았습니다.")
-        print("Heroku에서 다음 명령어로 토큰을 설정하세요:")
-        print("heroku config:set DISCORD_TOKEN=YOUR_ACTUAL_BOT_TOKEN")
+        print("Koyeb에서 환경변수를 설정하세요.")
         exit(1)
     
     bot.run(token)
