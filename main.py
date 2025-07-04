@@ -37,7 +37,7 @@ def get_default_messages():
         },
         "button_labels": {
             "delete": "삭제",
-            "admin_review": "관리자 검토"
+            "admin_review": "유지"
         },
         "responses": {
             "delete_confirm": "❌ 채널이 삭제됩니다.",
@@ -290,6 +290,44 @@ async def on_member_join(member):
                 # 기존 채널에 재입장 메시지
                 re_join_msg = MESSAGES["welcome_messages"]["re_join"]["message"].format(member_mention=member.mention)
                 await existing_channel.send(re_join_msg)
+                
+                # 재입장 시에도 초기 안내문 전송
+                initial_config = MESSAGES["welcome_messages"]["initial_welcome"]
+                
+                initial_embed = discord.Embed(
+                    title=initial_config["title"],
+                    description=initial_config["description"],
+                    color=int(initial_config["color"], 16),
+                    timestamp=datetime.now()
+                )
+                
+                initial_embed.add_field(
+                    name=initial_config["field_name"],
+                    value=initial_config["field_value"],
+                    inline=False
+                )
+                
+                if member.avatar:
+                    initial_embed.set_thumbnail(url=member.avatar.url)
+                
+                initial_view = InitialView(member, existing_channel, doradori_role)
+                await existing_channel.send(embed=initial_embed, view=initial_view)
+                
+                # 도라도라미 멘션 추가
+                await existing_channel.send(f"{doradori_role.mention}")
+                
+                # 5초 후 적응 확인 스케줄 등록 (재입장 시에도)
+                check_seconds = MESSAGES["settings"].get("adaptation_check_seconds", 5)
+                check_time = current_time + timedelta(seconds=check_seconds)
+                pending_checks[member_key] = {
+                    'check_time': check_time,
+                    'channel_id': existing_channel.id,
+                    'member_id': member.id,
+                    'guild_id': guild.id
+                }
+                
+                print(f"재입장 - {member.display_name}님에게 환영 메시지 전송 완료")
+                print(f"{check_seconds}초 후 적응 확인 예정: {check_time}")
                 return
             
             # 도라도라미 역할을 가진 멤버들 중 온라인인 사람 찾기
