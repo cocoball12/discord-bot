@@ -277,5 +277,12 @@ async def on_member_remove(member):
 
 # 봇 실행
 if __name__ == "__main__":
-    # 토큰을 환경변수나 설정파일에서 가져오세요
-    bot.run("YOUR_BOT_TOKEN")
+    # 환경변수에서 토큰 가져오기
+    token = os.getenv('DISCORD_TOKEN')
+    if not token:
+        print("오류: DISCORD_TOKEN 환경변수가 설정되지 않았습니다.")
+        print("Heroku에서 다음 명령어로 토큰을 설정하세요:")
+        print("heroku config:set DISCORD_TOKEN=YOUR_ACTUAL_BOT_TOKEN")
+        exit(1)
+    
+    bot.run(token)
