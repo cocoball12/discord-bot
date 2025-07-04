@@ -442,4 +442,50 @@ async def cleanup_duplicate_channels_for_member(guild, member_name, keep_channel
 @commands.has_permissions(manage_channels=True)
 async def cleanup_duplicate_channels(ctx):
     """중복된 환영 채널을 정리하는 명령어"""
-    guil
+    guild = ctx.guild
+    
+    # 환영 채널들 찾기
+    welcome_channels = [
+        ch for ch in guild.channels 
+        if isinstance(ch, discord.TextChannel) and ch.name.startswith("환영-")
+    ]
+    
+    if not welcome_channels:
+        await ctx.send("중복된 환영 채널이 없습니다.")
+        return
+    
+    # 멤버별로 그룹화
+    member_channels = {}
+    for channel in welcome_channels:
+        # 채널명에서 멤버명 추출 (환영-멤버명-타임스탬프 형식)
+        parts = channel.name.split('-')
+        if len(parts) >= 2:
+            member_name = parts[1]
+            if member_name not in member_channels:
+                member_channels[member_name] = []
+            member_channels[member_name].append(channel)
+    
+    # 각 멤버별로 가장 최근 채널 하나만 남기고 나머지 삭제
+    deleted_count = 0
+    for member_name, channels in member_channels.items():
+        if len(channels) > 1:
+            # 채널 생성 시간 기준으로 정렬 (최신순)
+            channels.sort(key=lambda x: x.created_at, reverse=True)
+            
+            # 가장 최근 채널 하나만 남기고 나머지 삭제
+            for channel in channels[1:]:
+                try:
+                    await channel.delete()
+                    deleted_count += 1
+                    print(f"중복 채널 삭제: {channel.name}")
+                except Exception as e:
+                    print(f"채널 삭제 실패: {e}")
+    
+    await ctx.send(f"중복 채널 정리 완료! {deleted_count}개의 중복 채널을 삭제했습니다.")
+
+# 봇 실행
+if __name__ == '__main__':
+    if TOKEN:
+        bot.run(TOKEN)
+    else:
+        print("DISCORD_TOKEN 환경 변수가 설정되지 않았습니다.")
