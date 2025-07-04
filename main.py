@@ -318,14 +318,18 @@ async def on_member_join(member):
             # 첫 번째 환영 메시지
             initial_embed = discord.Embed(
                 title="🎉 도라도라미와 축하축하",
-                description=f"안녕하세요! 저희 서버에 오신 것을 환영합니다! 48시간 내로 적응 안내 메시지를 보내드릴 예정입니다.",
+                description=f"안녕하세요! 저희 서버에 오신 것을 환영합니다!",
                 color=0x00ff00,
                 timestamp=datetime.now()
             )
             
             initial_embed.add_field(
-                name="📋 안내",
-                value="서버 규칙을 확인하시고 편안하게 이용해주세요!",
+                name="📋 서버 이용 안내",
+                value="""심심해서 들어온거면 관리진들이 불러줄때 빨리 답장하고 부르면 음챗방 오셈
+답도 안하고 활동 안할거면 **걍 딴 서버 가라**
+그런 새끼 받아주는 서버 아님
+
+48시간 내로 적응 안내 메시지를 보내드릴 예정입니다.""",
                 inline=False
             )
             
@@ -335,13 +339,8 @@ async def on_member_join(member):
             initial_view = InitialView(member, welcome_channel, doradori_role)
             await welcome_channel.send(embed=initial_embed, view=initial_view)
             
-            # 추가 안내 메시지
-            additional_info = f"""심심해서 들어온거면 관리진들이 불러줄때 빨리 답장하고 부르면 음챗방 오셈
-답도 안하고 활동 안할거면 **걍 딴 서버 가라**
-그런 새끼 받아주는 서버 아님
-{doradori_role.mention}"""
-            
-            await welcome_channel.send(additional_info)
+            # 도라도라미 멘션 추가
+            await welcome_channel.send(f"{doradori_role.mention}")
             
             # 48시간 후 적응 확인 스케줄 등록
             check_time = current_time + timedelta(hours=48)
