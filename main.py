@@ -37,7 +37,7 @@ def get_default_messages():
         },
         "button_labels": {
             "delete": "삭제",
-            "admin_review": "관리자 호출"
+            "admin_review": "유지"
         },
         "responses": {
             "delete_confirm": "❌ 채널이 삭제됩니다.",
@@ -211,7 +211,7 @@ class InitialView(discord.ui.View):
         else:
             await interaction.response.send_message(MESSAGES["responses"]["delete_permission_error"], ephemeral=True)
     
-    @discord.ui.button(label=MESSAGES["button_labels"]["admin_review"], style=discord.ButtonStyle.green, emoji='✅')
+    @discord.ui.button(label="관리자 호출", style=discord.ButtonStyle.green, emoji='✅')
     async def admin_review_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id == self.member.id:
             if self.doradori_role:
