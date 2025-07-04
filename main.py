@@ -83,20 +83,52 @@ async def on_command(ctx):
 @bot.command(name='ping', aliases=['핑', 'pong'])
 async def ping(ctx):
     """봇 응답 테스트"""
-    latency = round(bot.latency * 1000)
-    
-    embed = discord.Embed(
-        title="🏓 Pong!",
-        description=f"지연시간: **{latency}ms**",
-        color=0x00ff00,
-        timestamp=datetime.now()
-    )
-    embed.add_field(name="서버", value=ctx.guild.name if ctx.guild else "DM", inline=True)
-    embed.add_field(name="채널", value=ctx.channel.name if hasattr(ctx.channel, 'name') else "DM", inline=True)
-    embed.add_field(name="사용자", value=ctx.author.display_name, inline=True)
-    embed.set_footer(text=f"요청자: {ctx.author}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
-    
-    await ctx.send(embed=embed)
+    try:
+        latency = round(bot.latency * 1000)
+        
+        embed = discord.Embed(
+            title="🏓 Pong!",
+            description=f"지연시간: **{latency}ms**",
+            color=0x00ff00,
+            timestamp=datetime.now()
+        )
+        
+        try:
+            embed.add_field(name="서버", value=ctx.guild.name if ctx.guild else "DM", inline=True)
+            embed.add_field(name="채널", value=ctx.channel.name if hasattr(ctx.channel, 'name') else "DM", inline=True)
+            embed.add_field(name="사용자", value=ctx.author.display_name, inline=True)
+            
+            if ctx.author.avatar:
+                embed.set_footer(text=f"요청자: {ctx.author}", icon_url=ctx.author.avatar.url)
+            else:
+                embed.set_footer(text=f"요청자: {ctx.author}")
+        except:
+            # 추가 정보 설정 실패 시 기본 정보만 유지
+            pass
+        
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        # 임베드 생성 실패 시 간단한 메시지로 대체
+        await ctx.send(f"🏓 Pong! 지연시간: {round(bot.latency * 1000)}ms")
+
+@bot.command(name='간단테스트', aliases=['simple'])
+async def simple_test(ctx):
+    """간단한 테스트"""
+    await ctx.send("✅ 봇이 정상 작동 중입니다!")
+
+@bot.command(name='정보', aliases=['info'])
+async def bot_info(ctx):
+    """봇 기본 정보"""
+    info_text = f"""
+**봇 정보:**
+🤖 이름: {bot.user.name}
+🆔 ID: {bot.user.id}
+🏓 지연시간: {round(bot.latency * 1000)}ms
+🏰 서버 수: {len(bot.guilds)}개
+⚡ 상태: 온라인
+    """
+    await ctx.send(info_text)
 
 @bot.command(name='안녕', aliases=['hello', '하이', 'hi'])
 async def hello(ctx):
@@ -106,26 +138,44 @@ async def hello(ctx):
 @bot.command(name='테스트', aliases=['test', 'status'])
 async def test(ctx):
     """봇 상태 테스트"""
-    uptime = datetime.now() - bot.user.created_at
-    
-    embed = discord.Embed(
-        title="🤖 봇 상태 테스트",
-        description="모든 시스템이 정상 작동 중입니다!",
-        color=0x00ff00,
-        timestamp=datetime.now()
-    )
-    embed.add_field(name="🏓 응답 속도", value=f"{round(bot.latency * 1000)}ms", inline=True)
-    embed.add_field(name="🏰 서버 수", value=len(bot.guilds), inline=True)
-    embed.add_field(name="📱 명령어 접두사", value="`!`", inline=True)
-    
-    if ctx.guild:
-        embed.add_field(name="👥 현재 서버 멤버", value=f"{ctx.guild.member_count}명", inline=True)
-        embed.add_field(name="📺 채널 수", value=len(ctx.guild.channels), inline=True)
-        embed.add_field(name="🎭 역할 수", value=len(ctx.guild.roles), inline=True)
-    
-    embed.set_footer(text=f"요청자: {ctx.author}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
-    
-    await ctx.send(embed=embed)
+    try:
+        embed = discord.Embed(
+            title="🤖 봇 상태 테스트",
+            description="모든 시스템이 정상 작동 중입니다!",
+            color=0x00ff00,
+            timestamp=datetime.now()
+        )
+        
+        # 기본 정보 (안전한 데이터만)
+        embed.add_field(name="🏓 응답 속도", value=f"{round(bot.latency * 1000)}ms", inline=True)
+        embed.add_field(name="🏰 서버 수", value=len(bot.guilds), inline=True)
+        embed.add_field(name="📱 명령어 접두사", value="`!`", inline=True)
+        
+        # 서버 정보 (안전하게 처리)
+        if ctx.guild:
+            try:
+                embed.add_field(name="👥 현재 서버 멤버", value=f"{ctx.guild.member_count}명", inline=True)
+                embed.add_field(name="📺 채널 수", value=len(ctx.guild.channels), inline=True)
+                embed.add_field(name="🎭 역할 수", value=len(ctx.guild.roles), inline=True)
+            except Exception as e:
+                embed.add_field(name="⚠️ 서버 정보", value="일부 정보 접근 제한", inline=True)
+        
+        # 사용자 정보 (안전하게 처리)
+        try:
+            footer_text = f"요청자: {ctx.author}"
+            avatar_url = ctx.author.avatar.url if ctx.author.avatar else None
+            embed.set_footer(text=footer_text, icon_url=avatar_url)
+        except:
+            embed.set_footer(text="테스트 완료")
+        
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        # 임베드 생성 실패 시 간단한 메시지로 대체
+        try:
+            await ctx.send(f"✅ 봇 상태: 정상 작동 중\n🏓 응답 속도: {round(bot.latency * 1000)}ms\n🏰 서버 수: {len(bot.guilds)}개")
+        except Exception as e2:
+            await ctx.send("✅ 봇이 정상적으로 작동 중입니다!")
 
 @bot.command(name='도움말', aliases=['help', 'commands'])
 async def help_command(ctx):
@@ -210,11 +260,24 @@ async def doradori(ctx):
     else:
         await ctx.send(f"❌ '{DORADORI_ROLE_NAME}' 역할을 찾을 수 없습니다.")
 
-# 오류 처리
+# 오류 처리 - 더 자세한 로깅
 @bot.event
 async def on_command_error(ctx, error):
     error_msg = str(error)
-    logger.error(f"명령어 오류: {error_msg} - {ctx.author} - {ctx.message.content}")
+    error_type = type(error).__name__
+    
+    # 로그에 자세한 오류 정보 출력
+    logger.error(f"명령어 오류 발생:")
+    logger.error(f"  - 오류 타입: {error_type}")
+    logger.error(f"  - 오류 메시지: {error_msg}")
+    logger.error(f"  - 사용자: {ctx.author}")
+    logger.error(f"  - 명령어: {ctx.message.content}")
+    logger.error(f"  - 채널: {ctx.channel}")
+    logger.error(f"  - 서버: {ctx.guild.name if ctx.guild else 'DM'}")
+    
+    # 스택 트레이스 출력
+    import traceback
+    logger.error(f"  - 스택 트레이스:\n{traceback.format_exc()}")
     
     if isinstance(error, commands.CommandNotFound):
         await ctx.send("❌ 존재하지 않는 명령어입니다. `!도움말`로 사용 가능한 명령어를 확인해보세요.")
@@ -227,7 +290,8 @@ async def on_command_error(ctx, error):
     elif isinstance(error, commands.CommandOnCooldown):
         await ctx.send(f"❌ 명령어 쿨다운 중입니다. {error.retry_after:.1f}초 후 다시 시도하세요.")
     else:
-        await ctx.send(f"❌ 예상치 못한 오류가 발생했습니다. 관리자에게 문의하세요.")
+        # 사용자에게는 간단한 메시지, 로그에는 자세한 정보
+        await ctx.send(f"❌ 오류 발생: {error_type}\n자세한 내용은 로그를 확인하세요.")
 
 # 새 서버 입장 시
 @bot.event
