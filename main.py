@@ -4,351 +4,441 @@ import os
 import asyncio
 from datetime import datetime, timedelta
 import json
-import logging
 
-# 로깅 설정
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# 환경 변수에서 포트 가져오기
-PORT = os.environ.get('PORT', 8080)
-
-# 봇 설정 - 필요한 intents만 활성화
+# 봇 설정 - 음성 기능 비활성화
 intents = discord.Intents.default()
-intents.message_content = True  # 메시지 내용 읽기 권한 (중요!)
-intents.guilds = True
-intents.guild_messages = True
-intents.members = True  # 멤버 정보 접근
+intents.members = True
+intents.message_content = True
 
+# 음성 기능을 사용하지 않도록 설정
 bot = commands.Bot(
     command_prefix='!', 
     intents=intents, 
-    help_command=None,
-    case_insensitive=True
+    help_command=None
 )
 
 # 환경 변수 설정
 TOKEN = os.getenv('DISCORD_TOKEN')
 DORADORI_ROLE_NAME = "도라도라미"
 
-print(f"=== 봇 시작 정보 ===")
-print(f"TOKEN 존재: {'예' if TOKEN else '아니오'}")
-print(f"포트: {PORT}")
-print("==================")
+# 처리 중인 멤버 추적 (중복 방지)
+processing_members = set()
+# 최근 처리된 멤버 추적 (5분간 기록)
+recent_processed = {}
+# 48시간 후 확인 대기 중인 멤버들 (메모리 저장)
+pending_checks = {}
 
-# 봇 준비 완료 이벤트
 @bot.event
 async def on_ready():
-    print(f"\n✅ {bot.user}이(가) 온라인 상태입니다!")
-    print(f"📊 접속한 서버: {len(bot.guilds)}개")
-    print(f"🆔 봇 ID: {bot.user.id}")
-    print(f"⚡ 지연시간: {round(bot.latency * 1000)}ms")
-    
-    # 접속한 서버 목록
-    for guild in bot.guilds:
-        print(f"   🏰 {guild.name} (멤버: {guild.member_count}명)")
+    print(f'{bot.user}가 준비되었습니다!')
+    print(f'봇이 {len(bot.guilds)}개의 서버에 연결되어 있습니다.')
     
     # 봇 상태 설정
     await bot.change_presence(
-        activity=discord.Game(name="!ping 명령어 테스트"),
+        activity=discord.Game(name="신입 환영하기"),
         status=discord.Status.online
     )
-    print("\n🤖 봇이 완전히 준비되었습니다!")
-
-# 메시지 이벤트 (디버깅용)
-@bot.event
-async def on_message(message):
-    # 봇 자신의 메시지는 무시
-    if message.author == bot.user:
-        return
     
-    # 봇 멘션 시 응답
-    if bot.user.mentioned_in(message):
-        await message.channel.send(f"안녕하세요 {message.author.mention}! `!ping`을 입력해보세요!")
+    # 처리 중인 멤버 목록 초기화
+    processing_members.clear()
+    recent_processed.clear()
     
-    # 로그 출력
-    channel_name = message.channel.name if hasattr(message.channel, 'name') else 'DM'
-    guild_name = message.guild.name if message.guild else 'DM'
-    logger.info(f"메시지: [{guild_name}#{channel_name}] {message.author}: {message.content}")
-    
-    # 명령어 처리
-    await bot.process_commands(message)
+    # 48시간 후 확인 작업 시작
+    bot.loop.create_task(check_adaptation_loop())
 
-# 명령어 실행 이벤트
-@bot.event
-async def on_command(ctx):
-    logger.info(f"명령어 실행: {ctx.command} - {ctx.author}")
-
-# 기본 명령어들
-@bot.command(name='ping', aliases=['핑', 'pong'])
-async def ping(ctx):
-    """봇 응답 테스트"""
-    try:
-        latency = round(bot.latency * 1000)
-        
-        embed = discord.Embed(
-            title="🏓 Pong!",
-            description=f"지연시간: **{latency}ms**",
-            color=0x00ff00,
-            timestamp=datetime.now()
-        )
-        
+async def check_adaptation_loop():
+    """48시간 후 적응 확인을 위한 백그라운드 작업"""
+    while True:
         try:
-            embed.add_field(name="서버", value=ctx.guild.name if ctx.guild else "DM", inline=True)
-            embed.add_field(name="채널", value=ctx.channel.name if hasattr(ctx.channel, 'name') else "DM", inline=True)
-            embed.add_field(name="사용자", value=ctx.author.display_name, inline=True)
+            current_time = datetime.now()
+            to_remove = []
             
-            if ctx.author.avatar:
-                embed.set_footer(text=f"요청자: {ctx.author}", icon_url=ctx.author.avatar.url)
-            else:
-                embed.set_footer(text=f"요청자: {ctx.author}")
-        except:
-            # 추가 정보 설정 실패 시 기본 정보만 유지
-            pass
+            for key, check_data in pending_checks.items():
+                if current_time >= check_data['check_time']:
+                    guild_id, member_id = key.split('-')
+                    guild = bot.get_guild(int(guild_id))
+                    member = guild.get_member(int(member_id)) if guild else None
+                    
+                    if guild and member:
+                        await send_adaptation_check(guild, member, check_data['channel_id'])
+                    
+                    to_remove.append(key)
+            
+            # 처리된 항목들 제거
+            for key in to_remove:
+                del pending_checks[key]
+            
+        except Exception as e:
+            print(f"적응 확인 루프 오류: {e}")
         
-        await ctx.send(embed=embed)
-        
-    except Exception as e:
-        # 임베드 생성 실패 시 간단한 메시지로 대체
-        await ctx.send(f"🏓 Pong! 지연시간: {round(bot.latency * 1000)}ms")
+        # 1시간마다 확인
+        await asyncio.sleep(3600)
 
-@bot.command(name='간단테스트', aliases=['simple'])
-async def simple_test(ctx):
-    """간단한 테스트"""
-    await ctx.send("✅ 봇이 정상 작동 중입니다!")
-
-@bot.command(name='정보', aliases=['info'])
-async def bot_info(ctx):
-    """봇 기본 정보"""
-    info_text = f"""
-**봇 정보:**
-🤖 이름: {bot.user.name}
-🆔 ID: {bot.user.id}
-🏓 지연시간: {round(bot.latency * 1000)}ms
-🏰 서버 수: {len(bot.guilds)}개
-⚡ 상태: 온라인
-    """
-    await ctx.send(info_text)
-
-@bot.command(name='안녕', aliases=['hello', '하이', 'hi'])
-async def hello(ctx):
-    """인사 명령어"""
-    await ctx.send(f'안녕하세요 {ctx.author.mention}님! 😊\n`!테스트`로 봇 상태를 확인해보세요!')
-
-@bot.command(name='테스트', aliases=['test', 'status'])
-async def test(ctx):
-    """봇 상태 테스트"""
+async def send_adaptation_check(guild, member, channel_id):
+    """48시간 후 적응 확인 메시지 전송"""
     try:
+        channel = bot.get_channel(channel_id)
+        if not channel:
+            return
+        
         embed = discord.Embed(
-            title="🤖 봇 상태 테스트",
-            description="모든 시스템이 정상 작동 중입니다!",
+            title="🌟 서버 적응 안내",
+            description=f"{member.mention}님, 서버에 잘 적응하고 계신가요?",
             color=0x00ff00,
             timestamp=datetime.now()
         )
         
-        # 기본 정보 (안전한 데이터만)
-        embed.add_field(name="🏓 응답 속도", value=f"{round(bot.latency * 1000)}ms", inline=True)
-        embed.add_field(name="🏰 서버 수", value=len(bot.guilds), inline=True)
-        embed.add_field(name="📱 명령어 접두사", value="`!`", inline=True)
-        
-        # 서버 정보 (안전하게 처리)
-        if ctx.guild:
-            try:
-                embed.add_field(name="👥 현재 서버 멤버", value=f"{ctx.guild.member_count}명", inline=True)
-                embed.add_field(name="📺 채널 수", value=len(ctx.guild.channels), inline=True)
-                embed.add_field(name="🎭 역할 수", value=len(ctx.guild.roles), inline=True)
-            except Exception as e:
-                embed.add_field(name="⚠️ 서버 정보", value="일부 정보 접근 제한", inline=True)
-        
-        # 사용자 정보 (안전하게 처리)
-        try:
-            footer_text = f"요청자: {ctx.author}"
-            avatar_url = ctx.author.avatar.url if ctx.author.avatar else None
-            embed.set_footer(text=footer_text, icon_url=avatar_url)
-        except:
-            embed.set_footer(text="테스트 완료")
-        
-        await ctx.send(embed=embed)
-        
-    except Exception as e:
-        # 임베드 생성 실패 시 간단한 메시지로 대체
-        try:
-            await ctx.send(f"✅ 봇 상태: 정상 작동 중\n🏓 응답 속도: {round(bot.latency * 1000)}ms\n🏰 서버 수: {len(bot.guilds)}개")
-        except Exception as e2:
-            await ctx.send("✅ 봇이 정상적으로 작동 중입니다!")
+        embed.add_field(
+            name="📋 적응 확인",
+            value="""서버 초기 목록 넣었으니 잘 따라해주셔서 감사합니다!
+이제 조금 넣었으니 있다면, 급할 안천에서 궁금한 것들이 있으시면 물어보세요!
+          
+이미 적응하셨다면 → [서버 버튼을 눌러 적응하면 → (주제 버튼을 눌러주세요]
 
-@bot.command(name='도움말', aliases=['help', 'commands'])
-async def help_command(ctx):
-    """사용 가능한 명령어 목록"""
-    embed = discord.Embed(
-        title="📋 명령어 목록",
-        description="사용 가능한 명령어들입니다:",
-        color=0x0099ff
-    )
-    
-    commands_list = [
-        ("!ping", "봇 응답 테스트"),
-        ("!안녕", "인사 명령어"),
-        ("!테스트", "봇 상태 확인"),
-        ("!서버정보", "서버 정보 표시"),
-        ("!도라도라미", "도라도라미 역할 정보"),
-        ("!도움말", "이 메시지 표시")
-    ]
-    
-    for cmd, desc in commands_list:
-        embed.add_field(name=cmd, value=desc, inline=False)
-    
-    await ctx.send(embed=embed)
-
-@bot.command(name='서버정보', aliases=['serverinfo', 'server'])
-async def server_info(ctx):
-    """서버 정보 표시"""
-    if not ctx.guild:
-        await ctx.send("❌ 이 명령어는 서버에서만 사용할 수 있습니다.")
-        return
-    
-    guild = ctx.guild
-    embed = discord.Embed(
-        title=f"🏰 {guild.name}",
-        color=0x9932cc,
-        timestamp=datetime.now()
-    )
-    
-    embed.add_field(name="👥 멤버 수", value=f"{guild.member_count}명", inline=True)
-    embed.add_field(name="📅 생성일", value=guild.created_at.strftime("%Y년 %m월 %d일"), inline=True)
-    embed.add_field(name="🆔 서버 ID", value=guild.id, inline=True)
-    embed.add_field(name="📺 채널 수", value=len(guild.channels), inline=True)
-    embed.add_field(name="🎭 역할 수", value=len(guild.roles), inline=True)
-    embed.add_field(name="😀 이모지 수", value=len(guild.emojis), inline=True)
-    
-    if guild.icon:
-        embed.set_thumbnail(url=guild.icon.url)
-    
-    await ctx.send(embed=embed)
-
-@bot.command(name='도라도라미')
-async def doradori(ctx):
-    """도라도라미 역할 정보"""
-    if not ctx.guild:
-        await ctx.send("❌ 이 명령어는 서버에서만 사용할 수 있습니다.")
-        return
-    
-    guild = ctx.guild
-    role = discord.utils.get(guild.roles, name=DORADORI_ROLE_NAME)
-    
-    if role:
-        members_with_role = [member for member in guild.members if role in member.roles]
-        embed = discord.Embed(
-            title=f"🎭 {DORADORI_ROLE_NAME} 역할",
-            description=f"**멤버 수:** {len(members_with_role)}명",
-            color=role.color if role.color.value != 0 else 0x99aab5
+[정착하는 농도의 자유로운 임의 설정해주세요!
+[서버에 누구신 들으시 나중에 다시 들어온 방법하신 건]
+          
+🟢 완료하셨 → 무엇이자 안내 →  (완료도라미를 통해 증세로]
+          
+🟢 6일 내에 이후 응답이 없으면 자동으로 강퇴됩니다.
+도라도라미가 없싶어 적응을 완료하고!""",
+            inline=False
         )
         
-        if members_with_role:
-            member_list = "\n".join([f"• {member.display_name}" for member in members_with_role[:15]])
-            if len(members_with_role) > 15:
-                member_list += f"\n... 외 {len(members_with_role) - 15}명"
-            embed.add_field(name="멤버 목록", value=member_list, inline=False)
-        else:
-            embed.add_field(name="멤버 목록", value="아직 이 역할을 가진 멤버가 없습니다.", inline=False)
+        # 버튼 생성
+        view = AdaptationView(member, channel)
+        await channel.send(embed=embed, view=view)
         
-        embed.add_field(name="역할 생성일", value=role.created_at.strftime("%Y년 %m월 %d일"), inline=True)
-        embed.add_field(name="역할 ID", value=role.id, inline=True)
-        embed.add_field(name="멘션 가능", value="예" if role.mentionable else "아니오", inline=True)
+        print(f"{member.display_name}님에게 48시간 후 적응 확인 메시지를 보냈습니다.")
         
-        await ctx.send(embed=embed)
-    else:
-        await ctx.send(f"❌ '{DORADORI_ROLE_NAME}' 역할을 찾을 수 없습니다.")
+    except Exception as e:
+        print(f"적응 확인 메시지 전송 오류: {e}")
 
-# 오류 처리 - 더 자세한 로깅
+class AdaptationView(discord.ui.View):
+    def __init__(self, member, channel):
+        super().__init__(timeout=518400)  # 6일 = 518400초
+        self.member = member
+        self.channel = channel
+    
+    @discord.ui.button(label='삭제', style=discord.ButtonStyle.red, emoji='🗑️')
+    async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id == self.member.id:
+            await interaction.response.send_message("❌ 채널이 삭제됩니다.", ephemeral=True)
+            await asyncio.sleep(2)
+            await self.channel.delete()
+        else:
+            await interaction.response.send_message("❌ 본인만 삭제할 수 있습니다.", ephemeral=True)
+    
+    @discord.ui.button(label='관리자 검토', style=discord.ButtonStyle.green, emoji='✅')
+    async def admin_review_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id == self.member.id:
+            doradori_role = discord.utils.get(interaction.guild.roles, name=DORADORI_ROLE_NAME)
+            if doradori_role:
+                await interaction.response.send_message(f"✅ {doradori_role.mention} 관리자 검토를 요청했습니다!")
+            else:
+                await interaction.response.send_message("✅ 관리자 검토를 요청했습니다!")
+        else:
+            await interaction.response.send_message("❌ 본인만 관리자 검토를 요청할 수 있습니다.", ephemeral=True)
+
+@bot.event
+async def on_member_join(member):
+    """새로운 멤버가 서버에 입장했을 때 실행되는 함수"""
+    guild = member.guild
+    current_time = datetime.now()
+    
+    # 봇인 경우 무시
+    if member.bot:
+        return
+    
+    # 이미 처리 중인 멤버인지 확인
+    member_key = f"{guild.id}-{member.id}"
+    if member_key in processing_members:
+        print(f"{member.display_name}님은 이미 처리 중입니다.")
+        return
+    
+    # 최근 5분 내에 처리한 멤버인지 확인
+    if member_key in recent_processed:
+        time_diff = (current_time - recent_processed[member_key]).total_seconds()
+        if time_diff < 300:  # 5분 = 300초
+            print(f"{member.display_name}님은 최근에 이미 처리되었습니다.")
+            return
+    
+    # 처리 중 목록에 추가
+    processing_members.add(member_key)
+    recent_processed[member_key] = current_time
+    
+    try:
+        # 도라도라미 역할을 가진 멤버들 찾기
+        doradori_role = discord.utils.get(guild.roles, name=DORADORI_ROLE_NAME)
+        
+        if not doradori_role:
+            print(f"'{DORADORI_ROLE_NAME}' 역할을 찾을 수 없습니다.")
+            return
+        
+        # 비공개 채널 생성 전에 이미 존재하는 채널 확인
+        channel_name = f"환영-{member.display_name}-{datetime.now().strftime('%m%d')}"
+        
+        # 이미 같은 이름의 채널이 있는지 확인
+        existing_channels = [ch for ch in guild.channels if ch.name == channel_name]
+        if existing_channels:
+            print(f"이미 {channel_name} 채널이 존재합니다: {len(existing_channels)}개")
+            # 기존 채널이 있으면 그 채널에 환영 메시지만 추가
+            existing_channel = existing_channels[0]
+            await existing_channel.send(f"🔄 {member.mention}님이 다시 서버에 입장하셨습니다!")
+            return
+        
+        # 같은 멤버를 위한 채널이 이미 있는지 확인 (날짜 상관없이)
+        member_channels = [ch for ch in guild.channels if ch.name.startswith(f"환영-{member.display_name}-")]
+        if member_channels:
+            print(f"{member.display_name}님을 위한 채널이 이미 존재합니다: {member_channels[0].name}")
+            # 기존 채널에 재입장 메시지 추가
+            await member_channels[0].send(f"🔄 {member.mention}님이 다시 서버에 입장하셨습니다!")
+            return
+        
+        # 도라도라미 역할을 가진 멤버들 중 온라인인 사람 찾기
+        online_doradori_members = [
+            m for m in doradori_role.members 
+            if m.status != discord.Status.offline and not m.bot
+        ]
+        
+        if not online_doradori_members:
+            # 온라인인 사람이 없으면 모든 도라도라미 멤버를 대상으로
+            online_doradori_members = [m for m in doradori_role.members if not m.bot]
+        
+        if not online_doradori_members:
+            print("도라도라미 역할을 가진 멤버가 없습니다.")
+            return
+        
+        # 비공개 채널 생성
+        channel_name = f"환영-{member.display_name}-{datetime.now().strftime('%m%d')}"
+        
+        # 채널 권한 설정 - 간단하고 확실한 비공개 채널
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            member: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            doradori_role: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        }
+        
+        # 카테고리 찾기
+        category = discord.utils.get(guild.categories, name="신입환영") 
+        
+        # 채널 생성 시도 (실패 시 재시도하지 않음)
+        try:
+            # 채널 생성 직전에 한 번 더 확인
+            final_check = discord.utils.get(guild.channels, name=channel_name)
+            if final_check:
+                print(f"채널 생성 직전 확인: {channel_name} 채널이 이미 존재합니다.")
+                return
+                
+            welcome_channel = await guild.create_text_channel(
+                name=channel_name,
+                overwrites=overwrites,
+                category=category,
+                topic=f"{member.mention}님을 위한 환영 채널입니다."
+            )
+            print(f"채널 생성 성공: {welcome_channel.name}")
+            
+            # 잠깐 대기 후 중복 채널 확인 및 제거
+            await asyncio.sleep(1)
+            duplicate_channels = [ch for ch in guild.channels if ch.name == channel_name and ch.id != welcome_channel.id]
+            for dup_ch in duplicate_channels:
+                print(f"중복 채널 감지, 삭제: {dup_ch.name}")
+                try:
+                    await dup_ch.delete()
+                except:
+                    pass
+                    
+        except discord.HTTPException as e:
+            print(f"채널 생성 실패: {e}")
+            return
+        
+        # 첫 번째 환영 메시지 (이미지와 같은 내용)
+        initial_embed = discord.Embed(
+            title="🎉 도라도라미와 축하축하",
+            description=f"안녕하세요 저희 대화방 가족입니다! 48시간 내로 적응 설명 짧은 메시지를 도착 예정입니다.",
+            color=0x00ff00,
+            timestamp=datetime.now()
+        )
+        
+        initial_embed.add_field(
+            name="📋 안내",
+            value="서버 규칙을 확인하시고 관리자 이용해주세요!",
+            inline=False
+        )
+        
+        if member.avatar:
+            initial_embed.set_thumbnail(url=member.avatar.url)
+        
+        # 첫 번째 메시지의 버튼
+        class InitialView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=300)
+            
+            @discord.ui.button(label='삭제', style=discord.ButtonStyle.red, emoji='🗑️')
+            async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+                if interaction.user.id == member.id:
+                    await interaction.response.send_message("❌ 채널이 삭제됩니다.", ephemeral=True)
+                    await asyncio.sleep(2)
+                    await welcome_channel.delete()
+                else:
+                    await interaction.response.send_message("❌ 본인만 삭제할 수 있습니다.", ephemeral=True)
+            
+            @discord.ui.button(label='관리자 검토', style=discord.ButtonStyle.green, emoji='✅')
+            async def admin_review_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+                if interaction.user.id == member.id:
+                    await interaction.response.send_message(f"✅ {doradori_role.mention} 관리자 검토를 요청했습니다!")
+                else:
+                    await interaction.response.send_message("❌ 본인만 관리자 검토를 요청할 수 있습니다.", ephemeral=True)
+        
+        initial_view = InitialView()
+        await welcome_channel.send(embed=initial_embed, view=initial_view)
+        
+        # 추가 안내 메시지 - 도라도라미 역할 멘션으로 수정
+        additional_info = f"""심심해서 들어와서 말 없이 나가는 건 상관없지만
+담는 한국인 웹진 간편하게 장난 쳐서 가져 그건 서
+개 받아내는 서버 이라구
+{doradori_role.mention}"""
+        
+        await welcome_channel.send(additional_info)
+        
+        # 48시간 후 적응 확인 스케줄 등록
+        check_time = current_time + timedelta(hours=48)
+        pending_checks[member_key] = {
+            'check_time': check_time,
+            'channel_id': welcome_channel.id,
+            'member_id': member.id,
+            'guild_id': guild.id
+        }
+        
+        print(f"{member.display_name}님을 위한 환영 채널이 생성되었습니다: {welcome_channel.name}")
+        print(f"48시간 후 적응 확인 예정: {check_time}")
+        
+    except Exception as e:
+        print(f"채널 생성 중 오류가 발생했습니다: {e}")
+    finally:
+        # 처리 완료 후 목록에서 제거
+        processing_members.discard(member_key)
+
+@bot.command(name='중복채널정리')
+@commands.has_permissions(manage_channels=True)
+async def cleanup_duplicate_channels(ctx):
+    """중복된 환영 채널을 정리하는 명령어"""
+    guild = ctx.guild
+    welcome_channels = [ch for ch in guild.channels if ch.name.startswith('환영-')]
+    
+    # 같은 이름의 채널들을 그룹화
+    channel_groups = {}
+    for channel in welcome_channels:
+        if channel.name in channel_groups:
+            channel_groups[channel.name].append(channel)
+        else:
+            channel_groups[channel.name] = [channel]
+    
+    deleted_count = 0
+    for name, channels in channel_groups.items():
+        if len(channels) > 1:
+            # 가장 오래된 채널 하나만 남기고 나머지 삭제
+            channels.sort(key=lambda x: x.created_at)
+            for channel in channels[1:]:  # 첫 번째를 제외하고 삭제
+                try:
+                    await channel.delete()
+                    deleted_count += 1
+                    print(f"중복 채널 삭제: {channel.name}")
+                except:
+                    pass
+    
+    await ctx.send(f"✅ 중복된 환영 채널 {deleted_count}개를 정리했습니다.")
+
+@bot.command(name='채널삭제')
+@commands.has_permissions(manage_channels=True)
+async def delete_welcome_channel(ctx, channel_id: int = None):
+    """환영 채널을 삭제하는 명령어"""
+    if channel_id:
+        channel = bot.get_channel(channel_id)
+    else:
+        channel = ctx.channel
+    
+    if channel and channel.name.startswith('환영-'):
+        await channel.delete()
+        if channel != ctx.channel:
+            await ctx.send(f"채널 '{channel.name}'이 삭제되었습니다.")
+    else:
+        await ctx.send("환영 채널만 삭제할 수 있습니다.")
+
+@bot.command(name='테스트환영')
+@commands.has_permissions(manage_channels=True)
+async def test_welcome(ctx, member: discord.Member):
+    """환영 채널 생성을 테스트하는 명령어"""
+    try:
+        # 수동으로 on_member_join 함수 호출
+        await on_member_join(member)
+        await ctx.send(f"✅ {member.mention}님에 대한 환영 채널 생성을 테스트했습니다.")
+    except Exception as e:
+        await ctx.send(f"❌ 테스트 중 오류 발생: {e}")
+
+@bot.command(name='권한확인')
+@commands.has_permissions(manage_channels=True)
+async def check_permissions(ctx):
+    """봇의 권한을 확인하는 명령어"""
+    guild = ctx.guild
+    bot_member = guild.get_member(bot.user.id)
+    doradori_role = discord.utils.get(guild.roles, name=DORADORI_ROLE_NAME)
+    category = discord.utils.get(guild.categories, name="신입환영")
+    
+    embed = discord.Embed(title="권한 및 설정 확인", color=0x0099ff)
+    embed.add_field(name="봇 권한", value=f"채널 관리: {bot_member.guild_permissions.manage_channels}", inline=True)
+    embed.add_field(name="도라도라미 역할", value=f"존재: {doradori_role is not None}", inline=True)
+    embed.add_field(name="신입환영 카테고리", value=f"존재: {category is not None}", inline=True)
+    
+    if doradori_role:
+        embed.add_field(name="도라도라미 멤버 수", value=len(doradori_role.members), inline=True)
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name='도라도라미설정')
+@commands.has_permissions(administrator=True)
+async def set_doradori_role(ctx, role_name: str):
+    """도라도라미 역할 이름을 설정하는 명령어"""
+    global DORADORI_ROLE_NAME
+    DORADORI_ROLE_NAME = role_name
+    await ctx.send(f"도라도라미 역할이 '{role_name}'으로 설정되었습니다.")
+
+@bot.command(name='상태확인')
+async def check_status(ctx):
+    """봇 상태를 확인하는 명령어"""
+    guild = ctx.guild
+    doradori_role = discord.utils.get(guild.roles, name=DORADORI_ROLE_NAME)
+    
+    embed = discord.Embed(title="봇 상태 확인", color=0x0099ff)
+    embed.add_field(name="서버", value=guild.name, inline=True)
+    embed.add_field(name="총 멤버 수", value=len(guild.members), inline=True)
+    embed.add_field(name="대기 중인 적응 확인", value=len(pending_checks), inline=True)
+    
+    if doradori_role:
+        doradori_count = len([m for m in doradori_role.members if not m.bot])
+        embed.add_field(name=f"{DORADORI_ROLE_NAME} 멤버 수", value=doradori_count, inline=True)
+    else:
+        embed.add_field(name="도라도라미 역할", value="역할을 찾을 수 없음", inline=True)
+    
+    await ctx.send(embed=embed)
+
 @bot.event
 async def on_command_error(ctx, error):
-    error_msg = str(error)
-    error_type = type(error).__name__
-    
-    # 로그에 자세한 오류 정보 출력
-    logger.error(f"명령어 오류 발생:")
-    logger.error(f"  - 오류 타입: {error_type}")
-    logger.error(f"  - 오류 메시지: {error_msg}")
-    logger.error(f"  - 사용자: {ctx.author}")
-    logger.error(f"  - 명령어: {ctx.message.content}")
-    logger.error(f"  - 채널: {ctx.channel}")
-    logger.error(f"  - 서버: {ctx.guild.name if ctx.guild else 'DM'}")
-    
-    # 스택 트레이스 출력
-    import traceback
-    logger.error(f"  - 스택 트레이스:\n{traceback.format_exc()}")
-    
-    if isinstance(error, commands.CommandNotFound):
-        await ctx.send("❌ 존재하지 않는 명령어입니다. `!도움말`로 사용 가능한 명령어를 확인해보세요.")
-    elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"❌ 필수 인수가 누락되었습니다: `{error.param.name}`")
-    elif isinstance(error, commands.BotMissingPermissions):
-        await ctx.send("❌ 봇에게 필요한 권한이 없습니다. 서버 관리자에게 문의하세요.")
-    elif isinstance(error, commands.MissingPermissions):
+    if isinstance(error, commands.MissingPermissions):
         await ctx.send("❌ 이 명령어를 사용할 권한이 없습니다.")
-    elif isinstance(error, commands.CommandOnCooldown):
-        await ctx.send(f"❌ 명령어 쿨다운 중입니다. {error.retry_after:.1f}초 후 다시 시도하세요.")
+    elif isinstance(error, commands.CommandNotFound):
+        pass
     else:
-        # 사용자에게는 간단한 메시지, 로그에는 자세한 정보
-        await ctx.send(f"❌ 오류 발생: {error_type}\n자세한 내용은 로그를 확인하세요.")
-
-# 새 서버 입장 시
-@bot.event
-async def on_guild_join(guild):
-    logger.info(f"새 서버 입장: {guild.name} (ID: {guild.id})")
-    
-    # 일반 채널 찾기
-    general_channel = None
-    for channel in guild.text_channels:
-        if channel.permissions_for(guild.me).send_messages:
-            general_channel = channel
-            break
-    
-    if general_channel:
-        embed = discord.Embed(
-            title="🎉 안녕하세요!",
-            description=f"**{guild.name}** 서버에 초대해주셔서 감사합니다!\n`!도움말`로 사용 가능한 명령어를 확인해보세요.",
-            color=0x00ff00
-        )
-        try:
-            await general_channel.send(embed=embed)
-        except:
-            pass
+        print(f"오류 발생: {error}")
 
 # 봇 실행
 if __name__ == "__main__":
     if TOKEN:
         try:
-            # HTTP 서버 (Koyeb용)
-            import threading
-            from http.server import HTTPServer, SimpleHTTPRequestHandler
-            
-            class HealthCheckHandler(SimpleHTTPRequestHandler):
-                def do_GET(self):
-                    self.send_response(200)
-                    self.send_header('Content-type', 'text/plain')
-                    self.end_headers()
-                    self.wfile.write(b'Bot is running!')
-            
-            def run_http_server():
-                try:
-                    server = HTTPServer(('0.0.0.0', int(PORT)), HealthCheckHandler)
-                    logger.info(f"HTTP 서버 시작: 포트 {PORT}")
-                    server.serve_forever()
-                except Exception as e:
-                    logger.error(f"HTTP 서버 오류: {e}")
-            
-            threading.Thread(target=run_http_server, daemon=True).start()
-            
-            logger.info("Discord 봇 시작 중...")
             bot.run(TOKEN)
-            
-        except discord.LoginFailure:
-            logger.error("❌ Discord 로그인 실패! 토큰을 확인하세요.")
-        except discord.PrivilegedIntentsRequired:
-            logger.error("❌ 권한 오류! Discord Developer Portal에서 Message Content Intent를 활성화하세요.")
         except Exception as e:
-            logger.error(f"❌ 봇 실행 오류: {e}")
+            print(f"봇 실행 중 오류 발생: {e}")
+            print("Python 3.13 호환성 문제일 수 있습니다. Python 3.11 또는 3.12 사용을 권장합니다.")
     else:
-        print("❌ DISCORD_TOKEN 환경 변수를 설정해주세요!")
+        print("DISCORD_TOKEN 환경 변수를 설정해주세요!")
