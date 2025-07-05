@@ -173,7 +173,7 @@ async def on_ready():
         status=discord.Status.online
     )
 
-# 첫 번째 메시지용 버튼 View 클래스 (수정됨)
+# 첫 번째 메시지용 버튼 View 클래스 (도라도라미 역할만 접근 가능)
 class InitialWelcomeView(discord.ui.View):
     def __init__(self, member_id):
         super().__init__(timeout=None)
@@ -181,9 +181,12 @@ class InitialWelcomeView(discord.ui.View):
 
     @discord.ui.button(label="삭제", style=discord.ButtonStyle.danger, emoji="❌")
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.member_id:
+        # 도라도라미 역할 확인
+        doradori_role = discord.utils.get(interaction.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
+        
+        if not doradori_role or doradori_role not in interaction.user.roles:
             await interaction.response.send_message(
-                MESSAGES["responses"]["delete_permission_error"], 
+                MESSAGES["responses"]["admin_preserve_permission_error"], 
                 ephemeral=True
             )
             return
@@ -358,8 +361,8 @@ async def on_member_join(member):
     view = InitialWelcomeView(member.id)
     await channel.send(embed=embed, view=view)
     
-    # 48시간 후 적응 확인 메시지
-    await asyncio.sleep(MESSAGES["settings"]["adaptation_check_hours"] * 3600)
+    # 5초 후 적응 확인 메시지 (48시간에서 5초로 변경)
+    await asyncio.sleep(5)
     
     adaptation_check = MESSAGES["welcome_messages"]["adaptation_check"]
     embed = discord.Embed(
