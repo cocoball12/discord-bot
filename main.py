@@ -47,6 +47,7 @@ def get_default_messages():
             "preserve_confirm": "✅ {doradori_mention} 관리자를 호출했습니다! 채널이 보존되었습니다.",
             "preserve_confirm_no_role": "✅ 관리자를 호출했습니다! 채널이 보존되었습니다.",
             "preserve_permission_error": "❌ 본인만 보존할 수 있습니다.",
+            "admin_preserve_permission_error": "❌ 도라도라미 역할이 있는 관리자만 보존할 수 있습니다.",
             "nickname_changed_male": "✅ 닉네임이 '(단팥빵) {name}'으로 변경되었습니다!",
             "nickname_changed_female": "✅ 닉네임이 '(메론빵) {name}'으로 변경되었습니다!",
             "nickname_change_failed": "❌ 닉네임 변경에 실패했습니다. 권한을 확인해주세요.",
@@ -184,7 +185,7 @@ async def on_ready():
         status=discord.Status.online
     )
 
-# 첫 번째 메시지용 버튼 View 클래스
+# 첫 번째 메시지용 버튼 View 클래스 (수정됨)
 class InitialWelcomeView(discord.ui.View):
     def __init__(self, member_id):
         super().__init__(timeout=None)
@@ -209,28 +210,41 @@ class InitialWelcomeView(discord.ui.View):
 
     @discord.ui.button(label="보존", style=discord.ButtonStyle.success, emoji="✅")
     async def preserve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.member_id:
+        # 도라도라미 역할 확인
+        doradori_role = discord.utils.get(interaction.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
+        
+        if not doradori_role or doradori_role not in interaction.user.roles:
             await interaction.response.send_message(
-                MESSAGES["responses"]["preserve_permission_error"], 
+                MESSAGES["responses"]["admin_preserve_permission_error"], 
                 ephemeral=True
             )
             return
         
-        member = interaction.user
-        nickname_result = await change_nickname_with_gender_prefix(member)
+        # 채널의 대상 멤버 찾기
+        channel_name = interaction.channel.name
+        member_name = channel_name.replace("환영-", "")
+        target_member = discord.utils.get(interaction.guild.members, name=member_name)
+        
+        if not target_member:
+            await interaction.response.send_message(
+                "❌ 해당 멤버를 찾을 수 없습니다.", 
+                ephemeral=True
+            )
+            return
+        
+        # 대상 멤버의 닉네임 변경
+        nickname_result = await change_nickname_with_gender_prefix(target_member)
         
         # 멤버 권한 부여
-        access_granted = await grant_member_access(member)
-        
-        doradori_role = discord.utils.get(interaction.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
+        access_granted = await grant_member_access(target_member)
         
         response_message = ""
         
         if nickname_result == "male":
-            clean_name = get_clean_name(member.display_name)
+            clean_name = get_clean_name(target_member.display_name)
             response_message += MESSAGES["responses"]["nickname_changed_male"].format(name=clean_name) + "\n"
         elif nickname_result == "female":
-            clean_name = get_clean_name(member.display_name)
+            clean_name = get_clean_name(target_member.display_name)
             response_message += MESSAGES["responses"]["nickname_changed_female"].format(name=clean_name) + "\n"
         elif nickname_result == "already_has_prefix":
             response_message += MESSAGES["responses"]["nickname_already_has_prefix"] + "\n"
@@ -240,12 +254,9 @@ class InitialWelcomeView(discord.ui.View):
         if access_granted:
             response_message += MESSAGES["responses"]["channel_access_granted"] + "\n"
         
-        if doradori_role:
-            response_message += MESSAGES["responses"]["preserve_confirm"].format(
-                doradori_mention=doradori_role.mention
-            )
-        else:
-            response_message += MESSAGES["responses"]["preserve_confirm_no_role"]
+        response_message += MESSAGES["responses"]["preserve_confirm"].format(
+            doradori_mention=doradori_role.mention
+        )
         
         await interaction.response.send_message(response_message)
 
@@ -354,13 +365,7 @@ async def on_member_join(member):
         inline=False
     )
     
-    doradori_role = discord.utils.get(member.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
-    if doradori_role:
-        embed.add_field(
-            name="",
-            value=f"{doradori_role.mention}",
-            inline=False
-        )
+    # 관리자 호출 부분 제거됨
     
     view = InitialWelcomeView(member.id)
     await channel.send(embed=embed, view=view)
