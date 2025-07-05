@@ -28,6 +28,7 @@
     "preserve_confirm": "✅ {doradori_mention} 관리자를 호출했습니다! 채널이 보존되었습니다.",
     "preserve_confirm_no_role": "✅ 관리자를 호출했습니다! 채널이 보존되었습니다.",
     "preserve_permission_error": "❌ 본인만 보존할 수 있습니다.",
+    "admin_preserve_permission_error": "❌ 도라도라미 역할이 있는 관리자만 보존할 수 있습니다.",
     "nickname_changed_male": "✅ 닉네임이 '(단팥빵) {name}'으로 변경되었습니다!",
     "nickname_changed_female": "✅ 닉네임이 '(메론빵) {name}'으로 변경되었습니다!",
     "nickname_change_failed": "❌ 닉네임 변경에 실패했습니다. 권한을 확인해주세요.",
