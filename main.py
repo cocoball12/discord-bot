@@ -5,7 +5,9 @@ import asyncio
 from datetime import datetime, timedelta
 import json
 import re
-# import aiohttp  # 사용하지 않음
+import aiohttp
+from aiohttp import web
+import threading
 
 # 메시지 설정 로드
 def load_messages():
@@ -21,7 +23,7 @@ def get_default_messages():
         "welcome_messages": {
             "initial_welcome": {
                 "title": "🎉 도라도라미와 속닥속닥",
-                "description": "관리자와 개인 대화가 가능합니다!\n48시간 내로 적응 상태 확인 메시지를 드릴 예정입니다.",
+                "description": "관리자와 개인 대화가 가능합니다!\n5초 내로 적응 상태 확인 메세지를 드릴 예정입니다.",
                 "field_name": "📋 서버 규칙을 확인하시고 편안하게 이용해주세요!",
                 "field_value": "심심해서 들어온거면 관리진들이 불러줄때 빨리 답장하고 부르면 음챗방 오셈\n답도 안하고 활동 안할거면 **걍 딴 서버 가라**\n그런 새끼 받아주는 서버 아님.",
                 "color": "0x00ff00"
@@ -39,36 +41,61 @@ def get_default_messages():
         },
         "button_labels": {
             "delete": "삭제",
-            "preserve": "보존"
+            "admin_review": "유지"
         },
         "responses": {
             "delete_confirm": "❌ 채널이 삭제됩니다.",
             "delete_permission_error": "❌ 본인만 삭제할 수 있습니다.",
-            "preserve_confirm": "✅ {doradori_mention} 관리자를 호출했습니다! 채널이 보존되었습니다.",
-            "preserve_confirm_no_role": "✅ 관리자를 호출했습니다! 채널이 보존되었습니다.",
-            "preserve_permission_error": "❌ 본인만 보존할 수 있습니다.",
-            "admin_preserve_permission_error": "❌ 도라도라미 역할이 있는 관리자만 보존할 수 있습니다.",
+            "admin_review_confirm": "✅ {doradori_mention} 관리자를 호출했습니다!",
+            "admin_review_confirm_no_role": "✅ 관리자를 호출했습니다!",
+            "admin_review_permission_error": "❌ 본인만 관리자를 호출할 수 있습니다.",
             "nickname_changed_male": "✅ 닉네임이 '(단팥빵) {name}'으로 변경되었습니다!",
             "nickname_changed_female": "✅ 닉네임이 '(메론빵) {name}'으로 변경되었습니다!",
             "nickname_change_failed": "❌ 닉네임 변경에 실패했습니다. 권한을 확인해주세요.",
-            "nickname_already_has_prefix": "✅ 이미 성별 표시가 되어 있습니다!",
-            "channel_access_granted": "🎉 다른 채팅방에 접근할 수 있는 권한이 부여되었습니다!"
+            "nickname_already_has_prefix": "✅ 이미 성별 표시가 되어 있습니다!"
         },
         "settings": {
             "doradori_role_name": "도라도라미",
             "welcome_category": "신입환영",
-            "adaptation_check_hours": 48,
+            "adaptation_check_seconds": 5,
             "timeout_days": 6,
             "male_role_name": "남자",
             "female_role_name": "여자",
             "male_prefix": "(단팥빵)",
-            "female_prefix": "(메론빵)",
-            "member_role_name": "멤버"
+            "female_prefix": "(메론빵)"
         },
         "leave_messages": {
             "channel_deleted": "🚪 {member_name}님이 서버를 나가서 환영 채널이 삭제되었습니다."
         }
     }
+
+# 웹서버 핸들러
+async def health_check(request):
+    return web.json_response({
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "bot_ready": bot.is_ready(),
+        "guilds": len(bot.guilds) if bot.is_ready() else 0
+    })
+
+async def root_handler(request):
+    return web.json_response({
+        "message": "Discord Bot is running!",
+        "timestamp": datetime.now().isoformat()
+    })
+
+# 웹서버 시작
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', root_handler)
+    app.router.add_get('/health', health_check)
+    
+    port = int(os.getenv('PORT', 8000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"웹서버가 포트 {port}에서 시작되었습니다.")
 
 # 닉네임 처리 함수
 def get_clean_name(display_name):
@@ -113,20 +140,6 @@ async def change_nickname_with_gender_prefix(member):
         print(f"닉네임 변경 오류: {e}")
         return "error"
 
-async def grant_member_access(member):
-    """멤버 역할을 부여하여 다른 채팅방 접근 권한을 줌"""
-    try:
-        member_role = discord.utils.get(member.guild.roles, name=MESSAGES["settings"]["member_role_name"])
-        if member_role and member_role not in member.roles:
-            await member.add_roles(member_role)
-            return True
-        return False
-    except discord.Forbidden:
-        return False
-    except Exception as e:
-        print(f"멤버 권한 부여 오류: {e}")
-        return False
-
 # 메시지 설정 로드
 MESSAGES = load_messages()
 
@@ -141,7 +154,7 @@ bot = commands.Bot(
 )
 
 # Keep-Alive 함수들
-@tasks.loop(minutes=15)  # 15분마다 실행
+@tasks.loop(minutes=5)  # 5분마다 실행 (더 자주)
 async def keep_alive():
     """봇을 활성 상태로 유지"""
     try:
@@ -154,48 +167,39 @@ async def keep_alive():
     except Exception as e:
         print(f"Keep-Alive 오류: {e}")
 
-# self_ping 기능 제거됨 (aiohttp 의존성 제거)
+@tasks.loop(minutes=10)  # 10분마다 실행 (더 자주)
+async def self_ping():
+    """자신에게 HTTP 요청을 보내어 슬립 방지"""
+    try:
+        # Koyeb 앱 URL 자동 생성
+        app_url = os.getenv('KOYEB_APP_URL')
+        if not app_url:
+            # 환경변수가 없으면 기본값 사용
+            app_name = os.getenv('KOYEB_APP_NAME', 'your-app-name')
+            app_url = f"https://{app_name}.koyeb.app"
+        
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(f"{app_url}/health", timeout=30) as response:
+                    print(f"Self-ping: {response.status} - {await response.text()}")
+            except asyncio.TimeoutError:
+                print("Self-ping: 타임아웃")
+            except Exception as e:
+                print(f"Self-ping 요청 오류: {e}")
+    except Exception as e:
+        print(f"Self-ping 오류: {e}")
 
-# 간단한 웹서버 라우트 (선택사항)
-@bot.event
-async def on_ready():
-    print(f'{bot.user} 봇이 준비되었습니다!')
-    
-    # Keep-Alive 태스크 시작
-    if not keep_alive.is_running():
-        keep_alive.start()
-    
-    # self_ping 제거됨
-    
-    # 초기 상태 설정
-    await bot.change_presence(
-        activity=discord.Game(name=f"서버 관리 | {len(bot.guilds)}개 서버"),
-        status=discord.Status.online
-    )
-
-# 첫 번째 메시지용 버튼 View 클래스 (도라도라미 역할만 접근 가능)
+# 첫 번째 메시지용 버튼 View 클래스
 class InitialWelcomeView(discord.ui.View):
-    def __init__(self, member_id, guild):
+    def __init__(self, member_id):
         super().__init__(timeout=None)
         self.member_id = member_id
-        self.guild = guild
-        
-        # 도라도라미 역할 확인
-        doradori_role = discord.utils.get(guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
-        
-        # 도라도라미 역할이 없으면 버튼을 비활성화
-        if not doradori_role:
-            self.delete_button.disabled = True
-            self.preserve_button.disabled = True
 
     @discord.ui.button(label="삭제", style=discord.ButtonStyle.danger, emoji="❌")
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 도라도라미 역할 확인
-        doradori_role = discord.utils.get(interaction.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
-        
-        if not doradori_role or doradori_role not in interaction.user.roles:
+        if interaction.user.id != self.member_id:
             await interaction.response.send_message(
-                MESSAGES["responses"]["admin_preserve_permission_error"], 
+                MESSAGES["responses"]["delete_permission_error"], 
                 ephemeral=True
             )
             return
@@ -208,55 +212,39 @@ class InitialWelcomeView(discord.ui.View):
         await asyncio.sleep(3)
         await interaction.channel.delete()
 
-    @discord.ui.button(label="보존", style=discord.ButtonStyle.success, emoji="✅")
-    async def preserve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 도라도라미 역할 확인
+    @discord.ui.button(label="관리자 호출", style=discord.ButtonStyle.success, emoji="✅")
+    async def admin_review_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.member_id:
+            await interaction.response.send_message(
+                MESSAGES["responses"]["admin_review_permission_error"], 
+                ephemeral=True
+            )
+            return
+        
+        member = interaction.user
+        nickname_result = await change_nickname_with_gender_prefix(member)
+        
         doradori_role = discord.utils.get(interaction.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
-        
-        if not doradori_role or doradori_role not in interaction.user.roles:
-            await interaction.response.send_message(
-                MESSAGES["responses"]["admin_preserve_permission_error"], 
-                ephemeral=True
-            )
-            return
-        
-        # 채널의 대상 멤버 찾기
-        channel_name = interaction.channel.name
-        member_name = channel_name.replace("환영-", "")
-        target_member = discord.utils.get(interaction.guild.members, name=member_name)
-        
-        if not target_member:
-            await interaction.response.send_message(
-                "❌ 해당 멤버를 찾을 수 없습니다.", 
-                ephemeral=True
-            )
-            return
-        
-        # 대상 멤버의 닉네임 변경
-        nickname_result = await change_nickname_with_gender_prefix(target_member)
-        
-        # 멤버 권한 부여
-        access_granted = await grant_member_access(target_member)
         
         response_message = ""
         
         if nickname_result == "male":
-            clean_name = get_clean_name(target_member.display_name)
+            clean_name = get_clean_name(member.display_name)
             response_message += MESSAGES["responses"]["nickname_changed_male"].format(name=clean_name) + "\n"
         elif nickname_result == "female":
-            clean_name = get_clean_name(target_member.display_name)
+            clean_name = get_clean_name(member.display_name)
             response_message += MESSAGES["responses"]["nickname_changed_female"].format(name=clean_name) + "\n"
         elif nickname_result == "already_has_prefix":
             response_message += MESSAGES["responses"]["nickname_already_has_prefix"] + "\n"
         elif nickname_result in ["no_permission", "error"]:
             response_message += MESSAGES["responses"]["nickname_change_failed"] + "\n"
         
-        if access_granted:
-            response_message += MESSAGES["responses"]["channel_access_granted"] + "\n"
-        
-        response_message += MESSAGES["responses"]["preserve_confirm"].format(
-            doradori_mention=doradori_role.mention
-        )
+        if doradori_role:
+            response_message += MESSAGES["responses"]["admin_review_confirm"].format(
+                doradori_mention=doradori_role.mention
+            )
+        else:
+            response_message += MESSAGES["responses"]["admin_review_confirm_no_role"]
         
         await interaction.response.send_message(response_message)
 
@@ -283,20 +271,17 @@ class AdaptationCheckView(discord.ui.View):
         await asyncio.sleep(3)
         await interaction.channel.delete()
 
-    @discord.ui.button(label="보존", style=discord.ButtonStyle.success, emoji="✅")
-    async def preserve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="유지", style=discord.ButtonStyle.success, emoji="✅")
+    async def admin_review_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.member_id:
             await interaction.response.send_message(
-                MESSAGES["responses"]["preserve_permission_error"], 
+                MESSAGES["responses"]["admin_review_permission_error"], 
                 ephemeral=True
             )
             return
         
         member = interaction.user
         nickname_result = await change_nickname_with_gender_prefix(member)
-        
-        # 멤버 권한 부여
-        access_granted = await grant_member_access(member)
         
         doradori_role = discord.utils.get(interaction.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
         
@@ -313,19 +298,36 @@ class AdaptationCheckView(discord.ui.View):
         elif nickname_result in ["no_permission", "error"]:
             response_message += MESSAGES["responses"]["nickname_change_failed"] + "\n"
         
-        if access_granted:
-            response_message += MESSAGES["responses"]["channel_access_granted"] + "\n"
-        
         if doradori_role:
-            response_message += MESSAGES["responses"]["preserve_confirm"].format(
+            response_message += MESSAGES["responses"]["admin_review_confirm"].format(
                 doradori_mention=doradori_role.mention
             )
         else:
-            response_message += MESSAGES["responses"]["preserve_confirm_no_role"]
+            response_message += MESSAGES["responses"]["admin_review_confirm_no_role"]
         
         await interaction.response.send_message(response_message)
 
 # 봇 이벤트
+@bot.event
+async def on_ready():
+    print(f'{bot.user} 봇이 준비되었습니다!')
+    
+    # 웹서버 시작
+    await start_web_server()
+    
+    # Keep-Alive 태스크 시작
+    if not keep_alive.is_running():
+        keep_alive.start()
+    
+    if not self_ping.is_running():
+        self_ping.start()
+    
+    # 초기 상태 설정
+    await bot.change_presence(
+        activity=discord.Game(name=f"서버 관리 | {len(bot.guilds)}개 서버"),
+        status=discord.Status.online
+    )
+
 @bot.event
 async def on_member_join(member):
     welcome_category = discord.utils.get(member.guild.categories, name=MESSAGES["settings"]["welcome_category"])
@@ -365,12 +367,18 @@ async def on_member_join(member):
         inline=False
     )
     
-    # 수정된 부분: guild 인수 추가
-    view = InitialWelcomeView(member.id, member.guild)
+    doradori_role = discord.utils.get(member.guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
+    if doradori_role:
+        embed.add_field(
+            name="",
+            value=f"{doradori_role.mention}",
+            inline=False
+        )
+    
+    view = InitialWelcomeView(member.id)
     await channel.send(embed=embed, view=view)
     
-    # 5초 후 적응 확인 메시지 (48시간에서 5초로 변경)
-    await asyncio.sleep(5)
+    await asyncio.sleep(MESSAGES["settings"]["adaptation_check_seconds"])
     
     adaptation_check = MESSAGES["welcome_messages"]["adaptation_check"]
     embed = discord.Embed(
