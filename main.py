@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime, timedelta
 import json
 import re
-import aiohttp
+# import aiohttp  # 사용하지 않음
 
 # 메시지 설정 로드
 def load_messages():
@@ -154,18 +154,7 @@ async def keep_alive():
     except Exception as e:
         print(f"Keep-Alive 오류: {e}")
 
-@tasks.loop(minutes=30)  # 30분마다 실행
-async def self_ping():
-    """자신에게 HTTP 요청을 보내어 슬립 방지"""
-    try:
-        # Koyeb 앱 URL (환경변수에서 가져오기)
-        app_url = os.getenv('KOYEB_APP_URL')
-        if app_url:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{app_url}/health") as response:
-                    print(f"Self-ping: {response.status}")
-    except Exception as e:
-        print(f"Self-ping 오류: {e}")
+# self_ping 기능 제거됨 (aiohttp 의존성 제거)
 
 # 간단한 웹서버 라우트 (선택사항)
 @bot.event
@@ -176,8 +165,7 @@ async def on_ready():
     if not keep_alive.is_running():
         keep_alive.start()
     
-    if not self_ping.is_running():
-        self_ping.start()
+    # self_ping 제거됨
     
     # 초기 상태 설정
     await bot.change_presence(
