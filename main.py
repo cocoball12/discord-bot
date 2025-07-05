@@ -175,9 +175,18 @@ async def on_ready():
 
 # 첫 번째 메시지용 버튼 View 클래스 (도라도라미 역할만 접근 가능)
 class InitialWelcomeView(discord.ui.View):
-    def __init__(self, member_id):
+    def __init__(self, member_id, guild):
         super().__init__(timeout=None)
         self.member_id = member_id
+        self.guild = guild
+        
+        # 도라도라미 역할 확인
+        doradori_role = discord.utils.get(guild.roles, name=MESSAGES["settings"]["doradori_role_name"])
+        
+        # 도라도라미 역할이 없으면 버튼을 비활성화
+        if not doradori_role:
+            self.delete_button.disabled = True
+            self.preserve_button.disabled = True
 
     @discord.ui.button(label="삭제", style=discord.ButtonStyle.danger, emoji="❌")
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -356,9 +365,8 @@ async def on_member_join(member):
         inline=False
     )
     
-    # 관리자 호출 부분 제거됨
-    
-    view = InitialWelcomeView(member.id)
+    # 수정된 부분: guild 인수 추가
+    view = InitialWelcomeView(member.id, member.guild)
     await channel.send(embed=embed, view=view)
     
     # 5초 후 적응 확인 메시지 (48시간에서 5초로 변경)
